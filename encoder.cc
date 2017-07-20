@@ -35,26 +35,34 @@ public:
 	}
 	void read_header(void); 
 
-	// Here support routines for reading binary file.
+	// Support routines for reading binary file.
+	
+	// Skip "s" bytes on input Wav file
 	void skip_bytes(int s) {
 		wave_file.seekg(s,ios_base::cur);
 	}
+	// Read 32 bit integer in big-endian mode
 	int read32_hilo(void) {
 		char buf[4];
 		wave_file.read(&buf[0],4);
 		char rbuf[4] = { buf[3],buf[2],buf[1],buf[0]};
 		return *(reinterpret_cast<int*>(&rbuf[0]));
 	}
+
+	// Read 32 bit integer in little-endian mode
 	int read32_lohi(void) {
 		int32_t data;
 		wave_file.read(reinterpret_cast<char*>(&data),4);
 		return data;
 	}
+
+	// Read 16 integer in little-endian mode
 	int read16_lohi(void) {
 		int16_t data;
 		wave_file.read(reinterpret_cast<char*>(&data),2);
 		return data;
 	}
+	// Read Wav sample data into "d" vector.
 	vector<char>& read(vector<char>& d) {
 		d.resize(data_size);
 		wave_file.read(&d[0],data_size);
@@ -67,18 +75,23 @@ public:
 	// Wave file header data entries getters functions
 	//
 
+
+	// Wav types. Only 1 - PCM supported here.
 	int get_format(void) {
 		return format;
 	}
 
+	// Number of channels: 1 - mono, 2 - Stereo.
 	int get_channels(void) {
 		return channels;
 	}
-
+	
+	//Sample size.
 	int get_bits_per_sample(void) {
 		return bits_per_sample;
 	}
 
+	// Wav Sample rate.
 	int get_samples_per_sec(void) {
 		return samples_per_sec;
 	}
@@ -86,6 +99,7 @@ public:
 	int get_avg_bytes_per_sec(void) {
 		return avg_bytes_per_sec;
 	}
+	// Sample data size.
 	int get_size(void) {
 		return data_size;
 	}
@@ -112,12 +126,14 @@ public:
 		Encoder(Wave_Reader& wr): wave(wr) {
 			  if (!(gfp = lame_init()))
 				throw std::runtime_error("Unable to init LAME library");
-			  
-			  lame_set_num_channels(gfp,wr.get_channels());
-   			  lame_set_in_samplerate(gfp,wr.get_samples_per_sec());
-   			  lame_set_quality(gfp,4); /* 4 is for good quality */ 
+			 
+			  // Set lame parametres based on Wav file data. 
+			  lame_set_num_channels(gfp,wave.get_channels());
+   			  lame_set_in_samplerate(gfp,wave.get_samples_per_sec());
+			  /* 4 is for good quality */
+   			  lame_set_quality(gfp,4);  
 
-			  // Other parameters LAME choose for us automatically (mono, brate, etc);
+			  // LAME choose other parameters  for us automatically (stereo type, comrassion rate, etc);
 			  if(lame_init_params(gfp)<0)
 				throw std::runtime_error("Unable to setup LAME library");
 		}
@@ -133,6 +149,11 @@ private:
 };
 
 extern "C" void* thr_start(void*);
+
+//
+// This is class for thread pool manipulation. It will run some threads. Establish queue with pointers to job data (Wav 
+// filenames) which is connected to thread pool. Thread may be stopped by sending empty filename to the queue.
+//
 
 class Thr_Queue {
 public:
@@ -180,6 +201,8 @@ vector<pthread_t> thr_v;
 int n_thr;
 };
 
+
+// Helper routine for starting new thread.
 extern "C" void* 
 thr_start(void* p) 
 {
@@ -187,6 +210,10 @@ thr_start(void* p)
 	q->int_run();
 	pthread_exit(0);
 }
+
+//
+//  Working thread get here new job (filename) or wait otherwise.
+//
 shared_ptr<string> 
 Thr_Queue::getq(void) 
 {
@@ -203,7 +230,10 @@ Thr_Queue::getq(void)
 		throw runtime_error("Unable to lock queue mutex in getq");
 	return r;
 }
-	
+
+//
+// Member function for sending job to working threads. 	
+//
 void 
 Thr_Queue::putq(shared_ptr<string> p) 
 {
@@ -220,6 +250,9 @@ Thr_Queue::putq(shared_ptr<string> p)
 	}
 }
 
+//
+// Working thread main loop here: get job from queue, read Wav file, encode mp3 and write new mp3 file.
+//
 void
 Thr_Queue::int_run(void) 
 {
@@ -248,6 +281,9 @@ Thr_Queue::int_run(void)
 	} while(true);
 }
 
+//
+// basic Wav header reader. Based on lame utility internal functions.
+//
 void
 Wave_Reader::read_header(void) 
 {

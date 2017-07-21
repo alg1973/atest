@@ -400,16 +400,21 @@ main(int ac,char* av[])
 
 	}
 	//Get number of online cores.
-	int ncores=sysconf(_SC_NPROCESSORS_ONLN);
+	int ncores=4;
+#ifndef __WINNT
+	ncores=sysconf(_SC_NPROCESSORS_ONLN);
 	if (ncores<=0) 
-		ncores=2;
+		ncores=4;
+#endif
 	int nfiles=0;
 	try {
 		Thr_Pool thrs(ncores);
 		thrs.run();
 
 		while (dirent* dent=readdir(dir)) {
+#if  !(defined(__CYGWIN__) || defined(__WINNT))
 			if (dent->d_type==DT_REG) {
+#endif
 				string n(dent->d_name);
 				if (n.size()>=4 && tolower(n[n.size()-1])=='v' &&
 					tolower(n[n.size()-2])=='a' && 
@@ -418,7 +423,9 @@ main(int ac,char* av[])
 							thrs.putq(make_shared<string>(n));
 							++nfiles;
 					}
+#if  !(defined(__CYGWIN__) ||defined(__WINNT))
 			}		
+#endif
 		}	
 		//Send to all threads stop signal with empty string.
 		for(int i=0;i<thrs.thr_num();++i) 

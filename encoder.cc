@@ -299,20 +299,13 @@ Thr_Pool::int_run(void)
 			break;
 		try {
 			Wave_Reader wr(*job);
-
-			cout<<"Channels: "<<wr.get_channels()
-			<<" Format: "<<wr.get_format()
-		        <<"\nBites per sample: "<<wr.get_bits_per_sample()
-			<<" Samples per second: "<<wr.get_samples_per_sec()
-			<<"\nAvg bytes per sec: "<<wr.get_avg_bytes_per_sec()
-			<<"\nData size: "<<wr.get_size()<<endl;	
-
 			Encoder e(wr);
+			//Transform file.wav -> file.mp3
 			job->replace(job->size()-3,3,"mp3");
 			e.encode(*job);
 	
 		} catch (exception& e) {
-			std::cout<<"Exception: "<<e.what()<<endl;
+			std::cerr<<"Exception: "<<e.what()<<endl;
 		}
 	} while(true);
 }
@@ -364,7 +357,7 @@ Encoder::encode (const string& mp3n)
 
 	int num_samples=pcm.size()/(wave.get_bits_per_sample()/8);
 
-	//This size recommended by LAME for  output buffer size
+	//This size is recommended by LAME for  output buffer size
 	vector<unsigned char> mp3out(((num_samples/4)*5)+7200,0); 
 	int ret;
 	if (wave.get_channels()==2) 
@@ -374,7 +367,6 @@ Encoder::encode (const string& mp3n)
 		ret=lame_encode_buffer(gfp,reinterpret_cast<short*>(&pcm[0]),0,
 						num_samples,&mp3out[0],mp3out.size());
 
-	cout<<"Lame encoded "<<pcm.size()<<" bytes Wav into "<<ret<<" bytes\n";
 	if (ret<0)
 		throw runtime_error("LAME encoding error");
 	mp3f.write(reinterpret_cast<char*>(&mp3out[0]),ret);
@@ -410,6 +402,7 @@ main(int ac,char* av[])
 	int ncores=sysconf(_SC_NPROCESSORS_ONLN);
 	if (ncores<=0) 
 		ncores=2;
+	int nfiles=0;
 	try {
 		Thr_Pool thrs(ncores);
 		thrs.run();
@@ -422,6 +415,7 @@ main(int ac,char* av[])
 					tolower(n[n.size()-3])=='w' &&
 					n[n.size()-4]=='.') {
 							thrs.putq(make_shared<string>(n));
+							++nfiles;
 					}
 			}		
 		}	
@@ -429,6 +423,7 @@ main(int ac,char* av[])
 		for(int i=0;i<thrs.thr_num();++i) 
 			thrs.putq(make_shared<string>(""));
 
+		cout<<"Converting "<<nfiles<<" file(s) with "<<ncores<<" threads.\n";
 	        // Wait for threads to exit.		
 		thrs.join_all();
 

@@ -301,6 +301,7 @@ Thr_Pool::int_run(void)
 			Wave_Reader wr(*job);
 			Encoder e(wr);
 			//Transform file.wav -> file.mp3
+			//It may be done with inplace character replacment i.e. *obj[job->size()-1]='3'; etc...
 			job->replace(job->size()-3,3,"mp3");
 			e.encode(*job);
 	

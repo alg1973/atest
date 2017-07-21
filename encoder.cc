@@ -5,6 +5,7 @@
 #include <fstream>
 #include <vector>
 #include <memory>
+#include <exception>
 #include <lame/lame.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -23,13 +24,13 @@ using namespace std;
 
 class Wave_Reader {
 public:
-	Wave_Reader(const string& wname): wave_file(wname,std::ios_base::binary | std::ios_base::in ) {
+	Wave_Reader(const string& wname): wave_file(wname.c_str(),std::ios_base::binary | std::ios_base::in ) {
 		if(!wave_file)
-        		throw std::runtime_error("Unable to open file");
+        		throw runtime_error("Unable to open file");
 		wave_file.exceptions ( std::ifstream::failbit | std::ifstream::badbit );
 		read_header();
 		if (format!=1) 
-        		throw std::runtime_error("Only PCM Wave file supported");
+        		throw runtime_error("Only PCM Wave file supported");
 		
 	} 
 	virtual ~Wave_Reader() {
@@ -131,7 +132,7 @@ class Encoder {
 public:
 		Encoder(Wave_Reader& wr): wave(wr) {
 			  if (!(gfp = lame_init()))
-				throw std::runtime_error("Unable to init LAME library");
+				throw runtime_error("Unable to init LAME library");
 			 
 			  // Set lame parametres based on Wav file data. 
 			  lame_set_num_channels(gfp,wave.get_channels());
@@ -141,7 +142,7 @@ public:
 
 			  // LAME choose other parameters  for us automatically (stereo type, compression rate, etc);
 			  if(lame_init_params(gfp)<0)
-				throw std::runtime_error("Unable to setup LAME library");
+				throw runtime_error("Unable to setup LAME library");
 		}
 
 		virtual ~Encoder() {
@@ -310,7 +311,7 @@ Thr_Pool::int_run(void)
 			job->replace(job->size()-3,3,"mp3");
 			e.encode(*job);
 	
-		} catch (std::exception& e) {
+		} catch (exception& e) {
 			std::cout<<"Exception: "<<e.what()<<endl;
 		}
 	} while(true);
@@ -324,12 +325,12 @@ Wave_Reader::read_header(void)
 {
 	// First is "riff" four bytes lebel.
 	if (read32_hilo()!=ID_RIFF)
-		throw std::logic_error("Not a Wave file");
+		throw logic_error("Not a Wave file");
 	int file_size=read32_hilo();
 
 	// "wave"  and "fmt " identificators.
 	if (!((read32_hilo()==ID_WAVE) && (read32_hilo()==ID_FMT)))
-		throw std::logic_error("Invalid Wave file");
+		throw logic_error("Invalid Wave file");
 
 	//Wave format Header size
 	int sub_hdr_size=read32_lohi();
@@ -358,7 +359,7 @@ Encoder::encode (const string& mp3n)
 	vector<char> pcm;
 	wave.read(pcm);			
 
-	ofstream mp3f(mp3n,std::ios_base::binary | std::ios_base::out);
+	ofstream mp3f(mp3n.c_str(),std::ios_base::binary | std::ios_base::out);
 	mp3f.exceptions ( std::ifstream::failbit | std::ifstream::badbit );
 
 	int num_samples=pcm.size()/(wave.get_bits_per_sample()/8);

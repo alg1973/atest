@@ -400,11 +400,11 @@ main(int ac,char* av[])
 
 	}
 	//Get number of online cores.
-	int ncores=4;
-#ifndef __WINNT
+	int ncores=8;
+#if defined(_SC_NPROCESSORS_ONLN) 
 	ncores=sysconf(_SC_NPROCESSORS_ONLN);
 	if (ncores<=0) 
-		ncores=4;
+		ncores=2;
 #endif
 	int nfiles=0;
 	try {

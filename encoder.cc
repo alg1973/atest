@@ -17,7 +17,9 @@ using namespace std;
 
 
 
-
+//
+// Class for Wav file reading. It only tested with PCM files with 16 bit samples.
+//
 
 class Wave_Reader {
 public:
@@ -30,7 +32,7 @@ public:
         		throw std::runtime_error("Only PCM Wave file supported");
 		
 	} 
-	~Wave_Reader() {
+	virtual ~Wave_Reader() {
 		wave_file.close();
 	}
 	void read_header(void); 
@@ -121,6 +123,10 @@ private:
 	ifstream wave_file;
 };
 
+//
+// Simple wrapper around LAME mp3 encoder.
+//
+
 class Encoder {
 public:
 		Encoder(Wave_Reader& wr): wave(wr) {
@@ -133,12 +139,12 @@ public:
 			  /* 4 is for good quality */
    			  lame_set_quality(gfp,4);  
 
-			  // LAME choose other parameters  for us automatically (stereo type, comrassion rate, etc);
+			  // LAME choose other parameters  for us automatically (stereo type, compression rate, etc);
 			  if(lame_init_params(gfp)<0)
 				throw std::runtime_error("Unable to setup LAME library");
 		}
 
-		~Encoder() {
+		virtual ~Encoder() {
 			lame_close(gfp);
 		}
 	
@@ -148,72 +154,33 @@ private:
  Wave_Reader& wave;
 };
 
-extern "C" void* thr_start(void*);
 
 //
-// This is class for thread pool manipulation. It will run some threads. Establish queue with pointers to job data (Wav 
-// filenames) which is connected to thread pool. Thread may be stopped by sending empty filename to the queue.
+// Multithreaded queue with threads syncronization. Extraction from the queue put thread into sleep if queue empty.
+// There is no limit on queue length.
 //
-
 class Thr_Queue {
 public:
-	Thr_Queue(int n): n_thr(n) {
-		int e=pthread_mutex_init(&queue_mutex,0);
-		if (e) 
-			throw runtime_error("Unable to create queue mutex");
-		if ((e=pthread_cond_init(&queue_cond,0)))
-			throw runtime_error("Unable to create queue cond_var");
-		
-	}
+      Thr_Queue(void) {
+	int e=pthread_mutex_init(&queue_mutex,0);
+	if (e) 
+		throw runtime_error("Unable to create queue mutex");
+	if ((e=pthread_cond_init(&queue_cond,0)))
+		throw runtime_error("Unable to create queue cond_var");
+     }
+     virtual ~Thr_Queue() {
+     }
+     // Pop data from queue back with waiting for new data.
+     shared_ptr<string> getq(void);
+     // Push date to queue front
+     void putq(shared_ptr<string> p);
 
-	void run(void) {
-		for(int i=0;i<n_thr;++i) {
-			pthread_t thr;
-			if (int e=pthread_create(&thr,0,thr_start,this)) {
-				throw runtime_error("Unable to start new thread");
-			}
-			thr_v.push_back(thr);
-		}
-	}
-
-	shared_ptr<string> getq(void);
-	void putq(shared_ptr<string> p);
-	void int_run(void);
-	void join_all(void) {
-		int e;
-		while(!thr_v.empty()) {
-			e=pthread_join(thr_v.back(),0);
-			if (e) {
-				throw runtime_error("Unable to join thread");
-			}
-			thr_v.pop_back();	
-		}
-	}
-	size_t thr_num(void) {
-		return thr_v.size();
-	}
 private:
-
-pthread_mutex_t queue_mutex;
-pthread_cond_t queue_cond;
-list<shared_ptr<string> > thr_q;
-vector<pthread_t> thr_v;
-int n_thr;
+  pthread_mutex_t queue_mutex;
+  pthread_cond_t queue_cond;
+  list<shared_ptr<string> > thr_q;
 };
 
-
-// Helper routine for starting new thread.
-extern "C" void* 
-thr_start(void* p) 
-{
-	Thr_Queue *q=reinterpret_cast<Thr_Queue*>(p);
-	q->int_run();
-	pthread_exit(0);
-}
-
-//
-//  Working thread get here new job (filename) or wait otherwise.
-//
 shared_ptr<string> 
 Thr_Queue::getq(void) 
 {
@@ -231,9 +198,6 @@ Thr_Queue::getq(void)
 	return r;
 }
 
-//
-// Member function for sending job to working threads. 	
-//
 void 
 Thr_Queue::putq(shared_ptr<string> p) 
 {
@@ -250,11 +214,82 @@ Thr_Queue::putq(shared_ptr<string> p)
 	}
 }
 
+extern "C" void* thr_start(void*);
+
+//
+// This is class for thread pool manipulation. It will run some threads. Establish queue with pointers to job data (Wav 
+// filenames) which is connected to thread pool. Thread may be stopped by sending empty filename to the queue.
+//
+
+class Thr_Pool {
+public:
+	Thr_Pool(int n): n_thr(n),thr_q() {
+	}
+	virtual ~Thr_Pool() {
+	}
+	void run(void);
+
+	//  Working thread get here new job (filename) or wait otherwise.
+	shared_ptr<string> getq(void) {
+		return thr_q.getq();
+	}
+	// Member function for sending job to working threads. 	
+	void putq(shared_ptr<string> p) {
+		thr_q.putq(p);
+	}
+
+	void int_run(void);
+	void join_all(void) {
+		int e;
+		while(!thr_v.empty()) {
+			e=pthread_join(thr_v.back(),0);
+			if (e) {
+				throw runtime_error("Unable to join thread");
+			}
+			thr_v.pop_back();	
+		}
+	}
+	size_t thr_num(void) {
+		return thr_v.size();
+	}
+private:
+
+vector<pthread_t> thr_v;
+int n_thr;
+Thr_Queue thr_q;
+};
+
+
+// Helper routine for starting new thread.
+extern "C" void* 
+thr_start(void* p) 
+{
+	Thr_Pool *q=reinterpret_cast<Thr_Pool*>(p);
+	q->int_run();
+	pthread_exit(0);
+}
+
+//
+// run member function launch new threads actualy.
+//
+
+void 
+Thr_Pool::run(void) 
+{
+		for(int i=0;i<n_thr;++i) {
+			pthread_t thr;
+			if (int e=pthread_create(&thr,0,thr_start,this)) {
+				throw runtime_error("Unable to start new thread");
+			}
+			thr_v.push_back(thr);
+		}
+}
+
 //
 // Working thread main loop here: get job from queue, read Wav file, encode mp3 and write new mp3 file.
 //
 void
-Thr_Queue::int_run(void) 
+Thr_Pool::int_run(void) 
 {
 	shared_ptr<string> job;
 	do {
@@ -375,7 +410,7 @@ main(int ac,char* av[])
 	if (ncores<=0) 
 		ncores=2;
 	try {
-		Thr_Queue thrs(ncores);
+		Thr_Pool thrs(ncores);
 		thrs.run();
 
 		while (dirent* dent=readdir(dir)) {
